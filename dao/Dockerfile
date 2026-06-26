@@ -47,7 +47,7 @@ RUN --mount=type=bind,target=/tmp uv pip install -r /tmp/requirements.txt
 
 COPY run /root/dao/prog/
 
-EXPOSE 5000
+EXPOSE 5001
 WORKDIR /root/dao/prog
 RUN chmod a+x run.sh
 ENTRYPOINT  ["./run.sh"]
