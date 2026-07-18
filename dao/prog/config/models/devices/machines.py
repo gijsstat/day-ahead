@@ -126,6 +126,22 @@ class MachineConfig(BaseModel):
             "x-validation-hint": "Must be >= 0, typically 0.001 - 0.02 euro/kwartier"
         }
     )
+    flex_cost_max: FlexFloat = Field(
+        default=FlexFloat(value=0.0),
+        alias="flex cost max",
+        description="Maximum extra cost in euro to let this machine start as early as possible",
+        json_schema_extra={
+            "x-help": "Budget in euro. When set (> 0), the machine starts at the earliest possible "
+                      "time whose total cost does not exceed the cheapest possible cost plus this "
+                      "budget — i.e. 'start as early as possible, but never spend more than this much "
+                      "extra to do it'. Set to 0 to disable (machine starts purely on lowest cost, "
+                      "regardless of timing; 'flex cost' can still be used as a soft tie-breaker). "
+                      "Can be a fixed number or a Home Assistant entity ID.",
+            "x-unit": "euro",
+            "x-ui-section": "General",
+            "x-validation-hint": "Must be >= 0. 0 means disabled (only 'flex cost' applies, if set)."
+        }
+    )
     
     model_config = ConfigDict(
         extra='allow',
