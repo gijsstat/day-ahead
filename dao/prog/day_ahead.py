@@ -3150,7 +3150,8 @@ class DaCalc(DaBase):
                     logging.info(
                         f"Herberekening: machines zo vroeg mogelijk gestart "
                         f"binnen budget van {budget:.2f} euro "
-                        f"(kosten: {cost.x:.2f} euro, was {min_cost:.2f} euro)"
+                        f"(extra kosten: {machine_flex_extra_cost:.2f} euro "
+                        f"t.o.v. de goedkoopste oplossing)"
                     )
         elif self.strategy == "minimize consumption":
             strategie = "minimale levering"
