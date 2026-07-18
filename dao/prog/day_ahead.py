@@ -2597,6 +2597,7 @@ class DaCalc(DaBase):
         ma_planned_start_dt = []  # start tijdstip planning window
         ma_planned_end_dt = []  # eind tijdstip planning window
         ma_instant_start = []  # direct starten
+        ma_flex_cost = []  # penalty in euro/kwartier vertraging t.o.v. het begin van de window
         for m in range(M):
             error = False
             ma_name.append(self.machines[m].name)
@@ -2609,6 +2610,7 @@ class DaCalc(DaBase):
             ma_entity_plan_end.append(
                 self.machines[m].entity_calculated_end
             )
+            ma_flex_cost.append(self.machines[m].flex_cost.resolve(ha_getter))  # FlexFloat
             entity_machine_program = self.machines[m].entity_selected_program
             if entity_machine_program:
                 try:
@@ -2872,6 +2874,18 @@ class DaCalc(DaBase):
             [model.add_var(var_type=BINARY) for _ in range(KW[m])] for m in range(M)
         ]
 
+        # flex cost per machine: penalty die oploopt naarmate de machine later in
+        # zijn planning-window start. Net als bij de EV switch_cost zorgt dit
+        # ervoor dat bij een klein verschil in kosten de machine toch eerder start.
+        flex_cost_ma = [model.add_var(var_type=CONTINUOUS, lb=0) for _ in range(M)]
+        for m in range(M):
+            if KW[m] == 0:
+                model += flex_cost_ma[m] == 0
+            else:
+                model += flex_cost_ma[m] == xsum(
+                    ma_flex_cost[m] * kw * ma_start[m][kw] for kw in range(KW[m])
+                )
+
         # machine aan per kwartier per run
         # ma_on = [[[model.add_var(var_type=BINARY) for kw in range(KW[m])]
         #           for r in range(R[m])] for m in range(M)]
@@ -3051,6 +3065,7 @@ class DaCalc(DaBase):
             xsum(c_l[u] * pl[u] - c_t[u] * pt[u] for u in range(U))
             + xsum(cycle_cost[b] + penalty_cost[b] for b in range(B))
             + xsum(switch_cost[e] for e in range(EV))
+            + xsum(flex_cost_ma[m] for m in range(M))
             + xsum(
                 (soc_mid[b][0] - soc_mid[b][U])
                 * one_soc[b]
@@ -3546,6 +3561,9 @@ class DaCalc(DaBase):
         total_switch_cost = 0
         for e in range(EV):
             total_switch_cost += switch_cost[e].x
+        total_flex_cost_ma = 0
+        for m in range(M):
+            total_flex_cost_ma += flex_cost_ma[m].x
         boiler_storage = (
             (boiler_temp[0].x - boiler_temp[U].x)
             * (spec_heat_boiler / (3600 * cop_boiler))
@@ -3557,6 +3575,7 @@ class DaCalc(DaBase):
             + total_cycle_cost
             + total_penalty_cost
             + total_switch_cost
+            + total_flex_cost_ma
             + battery_storage
             + boiler_storage
         )
@@ -3568,6 +3587,7 @@ class DaCalc(DaBase):
             f"Cycle cost         {total_cycle_cost: 7.2f}\n"
             f"Penalty cost       {total_penalty_cost: 7.2f}\n"
             f"EV switch costs    {total_switch_cost: 7.2f}\n"
+            f"Machine flex costs {total_flex_cost_ma: 7.2f}\n"
             f"Battery storage    {battery_storage: 7.2f}\n"
             f"Boiler storage     {boiler_storage: 7.2f}\n"
             f"Profit production  {profit_production: 7.2f}\n"
