@@ -2598,6 +2598,7 @@ class DaCalc(DaBase):
         ma_planned_end_dt = []  # eind tijdstip planning window
         ma_instant_start = []  # direct starten
         ma_flex_cost = []  # penalty in euro/kwartier vertraging t.o.v. het begin van de window
+        ma_flex_cost_max = []  # maximum totale flex cost in euro, 0 = geen maximum
         for m in range(M):
             error = False
             ma_name.append(self.machines[m].name)
@@ -2611,6 +2612,7 @@ class DaCalc(DaBase):
                 self.machines[m].entity_calculated_end
             )
             ma_flex_cost.append(self.machines[m].flex_cost.resolve(ha_getter))  # FlexFloat
+            ma_flex_cost_max.append(self.machines[m].flex_cost_max.resolve(ha_getter))  # FlexFloat
             entity_machine_program = self.machines[m].entity_selected_program
             if entity_machine_program:
                 try:
@@ -2885,6 +2887,10 @@ class DaCalc(DaBase):
                 model += flex_cost_ma[m] == xsum(
                     ma_flex_cost[m] * kw * ma_start[m][kw] for kw in range(KW[m])
                 )
+                # flex cost max: bovengrens op de extra kosten door de flex cost
+                # penalty. 0 (default) betekent geen maximum.
+                if ma_flex_cost_max[m] > 0:
+                    model += flex_cost_ma[m] <= ma_flex_cost_max[m]
 
         # machine aan per kwartier per run
         # ma_on = [[[model.add_var(var_type=BINARY) for kw in range(KW[m])]
@@ -3107,6 +3113,39 @@ class DaCalc(DaBase):
             if model.num_solutions == 0:
                 logging.warning(f"Geen oplossing voor: {self.strategy}")
                 return None
+
+            # machines met een flex cost max: binnen dat kostenbudget zo vroeg
+            # mogelijk starten (i.p.v. de goedkoopste toegestane starttijd).
+            ma_flex_early = [
+                m for m in range(M) if KW[m] > 0 and ma_flex_cost_max[m] > 0
+            ]
+            if ma_flex_early:
+                min_cost = cost.x
+                budget = sum(ma_flex_cost_max[m] for m in ma_flex_early)
+                model += cost <= min_cost + budget
+                model.objective = minimize(
+                    xsum(
+                        kw * ma_start[m][kw]
+                        for m in ma_flex_early
+                        for kw in range(KW[m])
+                    )
+                )
+                model.optimize()
+                if model.num_solutions == 0:
+                    logging.warning(
+                        "Geen oplossing bij herberekening voor zo vroeg mogelijk "
+                        "starten binnen flex cost max; val terug op goedkoopste "
+                        "oplossing"
+                    )
+                    model += cost <= min_cost
+                    model.objective = minimize(cost)
+                    model.optimize()
+                else:
+                    logging.info(
+                        f"Herberekening: machines zo vroeg mogelijk gestart "
+                        f"binnen budget van {budget:.2f} euro "
+                        f"(kosten: {cost.x:.2f} euro, was {min_cost:.2f} euro)"
+                    )
         elif self.strategy == "minimize consumption":
             strategie = "minimale levering"
             logging.info(f"Strategie: {strategie}")
