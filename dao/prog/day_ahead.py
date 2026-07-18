@@ -3100,8 +3100,9 @@ class DaCalc(DaBase):
             model.verbose = 0
         model.check_optimization_results()
 
-        # extra kosten door machines zo vroeg mogelijk te starten binnen hun
-        # flex cost max budget (alleen relevant bij strategie "minimize cost")
+        # extra kosten door de flex cost-voorkeur (zowel de zachte kwartier-
+        # penalty als een eventueel flex cost max budget) - alleen relevant
+        # bij strategie "minimize cost"
         machine_flex_extra_cost = 0.0
 
         # kosten optimalisering
@@ -3109,6 +3110,21 @@ class DaCalc(DaBase):
             strategie = "minimale kosten"
             logging.info(f"Strategie: {strategie}")
             logging.info(f"Maximale fout (maximal gap): {max_gap:<8.6f} euro")
+
+            flex_terms = xsum(flex_cost_ma[m] for m in range(M))
+
+            # baseline: de echt goedkoopste oplossing, zonder de flex cost-
+            # voorkeur voor eerder starten, puur om het effect ervan te
+            # kunnen rapporteren. Deze oplossing wordt niet gebruikt.
+            baseline_real_cost = None
+            if any(ma_flex_cost[m] > 0 or ma_flex_cost_max[m] > 0 for m in range(M)):
+                model.objective = minimize(cost - flex_terms)
+                model.optimize()
+                if model.num_solutions > 0:
+                    baseline_real_cost = cost.x - sum(
+                        flex_cost_ma[m].x for m in range(M)
+                    )
+
             model.objective = minimize(cost)
             start_calc = time.perf_counter()
             model.optimize()
@@ -3120,7 +3136,6 @@ class DaCalc(DaBase):
 
             # machines met een flex cost max: binnen dat kostenbudget zo vroeg
             # mogelijk starten (i.p.v. de goedkoopste toegestane starttijd).
-            machine_flex_extra_cost = 0.0
             ma_flex_early = [
                 m for m in range(M) if KW[m] > 0 and ma_flex_cost_max[m] > 0
             ]
@@ -3146,13 +3161,22 @@ class DaCalc(DaBase):
                     model.objective = minimize(cost)
                     model.optimize()
                 else:
-                    machine_flex_extra_cost = max(0.0, cost.x - min_cost)
                     logging.info(
                         f"Herberekening: machines zo vroeg mogelijk gestart "
                         f"binnen budget van {budget:.2f} euro "
-                        f"(extra kosten: {machine_flex_extra_cost:.2f} euro "
-                        f"t.o.v. de goedkoopste oplossing)"
+                        f"(kosten na herberekening: {cost.x:.2f} euro, "
+                        f"was {min_cost:.2f} euro)"
                     )
+
+            # echte extra kosten (in euro) door de flex cost-voorkeur, t.o.v.
+            # de goedkoopste oplossing zonder die voorkeur
+            if baseline_real_cost is not None:
+                final_real_cost = cost.x - sum(
+                    flex_cost_ma[m].x for m in range(M)
+                )
+                machine_flex_extra_cost = max(
+                    0.0, final_real_cost - baseline_real_cost
+                )
         elif self.strategy == "minimize consumption":
             strategie = "minimale levering"
             logging.info(f"Strategie: {strategie}")
