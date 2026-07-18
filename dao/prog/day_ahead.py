@@ -3100,6 +3100,10 @@ class DaCalc(DaBase):
             model.verbose = 0
         model.check_optimization_results()
 
+        # extra kosten door machines zo vroeg mogelijk te starten binnen hun
+        # flex cost max budget (alleen relevant bij strategie "minimize cost")
+        machine_flex_extra_cost = 0.0
+
         # kosten optimalisering
         if self.strategy == "minimize cost":
             strategie = "minimale kosten"
@@ -3116,6 +3120,7 @@ class DaCalc(DaBase):
 
             # machines met een flex cost max: binnen dat kostenbudget zo vroeg
             # mogelijk starten (i.p.v. de goedkoopste toegestane starttijd).
+            machine_flex_extra_cost = 0.0
             ma_flex_early = [
                 m for m in range(M) if KW[m] > 0 and ma_flex_cost_max[m] > 0
             ]
@@ -3141,6 +3146,7 @@ class DaCalc(DaBase):
                     model.objective = minimize(cost)
                     model.optimize()
                 else:
+                    machine_flex_extra_cost = max(0.0, cost.x - min_cost)
                     logging.info(
                         f"Herberekening: machines zo vroeg mogelijk gestart "
                         f"binnen budget van {budget:.2f} euro "
@@ -3627,12 +3633,14 @@ class DaCalc(DaBase):
             f"Penalty cost       {total_penalty_cost: 7.2f}\n"
             f"EV switch costs    {total_switch_cost: 7.2f}\n"
             f"Machine flex costs {total_flex_cost_ma: 7.2f}\n"
+            f"  waarvan zo vroeg mogelijk binnen budget: "
+            f"{machine_flex_extra_cost: 7.2f} "
+            f"(zit al in Cost consumption)\n"
             f"Battery storage    {battery_storage: 7.2f}\n"
             f"Boiler storage     {boiler_storage: 7.2f}\n"
             f"Profit production  {profit_production: 7.2f}\n"
             f"Total              {total_cost: 7.2f}\n"
-            f"Cost after optimize            {cost.x: 7.2f}\n"
-            f"Profit:                        {old_cost_da - cost.x: 7.2f}"
+            f"Cost after optimize            {cost.x: 7.2f}\n"            f"Profit:                        {old_cost_da - cost.x: 7.2f}"
         )
 
         # doorzetten van alle settings naar HA
